@@ -2,6 +2,7 @@
 
 import fitdecode
 import argparse
+from sys import exit
 
 """
 TODO:
@@ -64,26 +65,58 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
     else:
         return ans   
 
-def gen_dataframe(xaxis, yaxes):
+# Returns dataframe with all yaxes
+def gen_dataframe(xaxis, fnames, force=False):
     import pandas as pd
     import plotly.express as px
 
     assert xaxis in ["relative", "absolute", "distance"]
+    if xaxis == "absolute" and len(fnames) > 1 and force is False:
+        exit("Your input has multiple files and you've chosen to have the x-axis be absolute timestamps. Chances are that your data isn't going to have the same timestamps so they won't be on the same plot. If you're sure you want to do this, use the '--force' option")
     if xaxis == "absolute":
         xaxis = "timestamp"
     elif xaxis == "distance":
         xaxis = "distance"
     else:
-        xaxis = "time+0"
+        xaxis = "rel_time"
         start = None
 
-    data = {xaxis: list()}
-    for yaxis in yaxes:
-        data[yaxis] = list()
+    yaxes = fields_list(fnames)
 
-    
-    
+    data = list()
+    for fname in fnames:
+        f_data = {xaxis: list()}
+        for yaxis in yaxes:
+            f_data["{}_{}".format(fname, yaxis)] = list()
+        with fitdecode.FitReader(fname) as f:
+            for frame in f:
+                if isinstance(frame, fitdecode.FitDataMessage) and frame.global_mesg_num == 0x14:
+                    if xaxis == "rel_time":
+                        if start is None:
+                            start = frame.get_field("timestamp").raw_value
+                        f_data[xaxis].append(frame.get_field("timestamp").raw_value - start)
+                    else:
+                        f_data[xaxis].append(frame.get_field(xaxis).raw_value)
+                    
+                    for yaxis in yaxes:
+                        if frame.has_field(yaxis):
+                            f_data["{}_{}".format(fname, yaxis)].append(frame.get_field(yaxis).value)
+                        else:
+                            f_data["{}_{}".format(fname, yaxis)].append(None)
+        data.append(f_data)
 
+    # Convert dictionaries to dataframes
+    data = [ pd.DataFrame(_) for _ in data ] 
+    result = pd.concat(data, axis=1)
+    # Fill NaN with 0 (TEST)
+    result.fillna(0)
+    if xaxis == "timestamp":
+        result["timestamp"] = pd.to_datetime(result["timestamp"], unit='s')
+
+    fig = px.line(result)
+    fig.show()
+
+    return result
     
 
 # 1. Ask a user which field(s) they want to chart over
@@ -95,8 +128,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--xaxis", "-x", help="Use one of: 'absolute', 'relative', or 'distance'.\n'absolute' - use epoch timestamps given by the .fit file as the x-axis\n'relative' - use relative timestamps where your time starts at 0 and every second into the workout is +1 second\n'distance' - use distance as the x-axis\n'Default: 'absolute'", default="absolute")
     parser.add_argument("--list-fields", "-l", help="Lists all the available fields in all files", action='store_true')
+    parser.add_argument("--force", help="Forces multiple .fit files into the same plot", action='store_true')
+    # TODO
     #parser.add_argument("--interactive", help="Interactively choose the options you want to use", action='store_true')
-    parser.add_argument("--fields", "--yaxis", "-y", help="The fields within the .fit files you wish you chart over") 
+    #parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones in yaml format", type=argparse.FileType('r'), default="config.yaml")
+    # not sure i need this anymore
+    #parser.add_argument("--fields", "--yaxis", "-y", help="The fields within the .fit files you wish you chart over") 
     parser.add_argument("--files", help="Space separated list of .fit files to parse through", required=True, nargs="+")
     args = parser.parse_args()
 
@@ -106,37 +143,7 @@ if __name__ == "__main__":
             print(_)
         exit(0)
 
-    fit1 = "Run20210721072634.fit"
-    fit2 = "Run20210727072255.fit"
+    result = gen_dataframe(args.xaxis, args.files)
 
-    limit = 1000000
-    counter = 0
-    start_epoch = None
-
-    data = {"timestamp": list(), "speed": list()}
-
-    with fitdecode.FitReader(fit1) as f:
-        for frame in f:
-            if counter < limit:
-                if isinstance(frame, fitdecode.FitDataMessage):
-                    if frame.global_mesg_num == 0x14:
-                        data["timestamp"].append(frame.get_field("timestamp").raw_value)
-                        if frame.has_field("speed"):
-                            _ = frame.get_field("speed").value
-                            if _:
-                                data["speed"].append(_)
-                            else:
-                                data["speed"].append(0)
-                        else:
-                            data["speed"].append(0)
-
-                counter += 1
-            else:
-                break
-
-    df = pd.DataFrame(data=data)
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit='s')
     
-    fig = px.line(df, x="timestamp", y="speed")
-    fig.show()
     

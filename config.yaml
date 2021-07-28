@@ -1,0 +1,27 @@
+---
+heart-rate-zones:
+- name: N/A
+  min-heart-rate: 0
+  max-heart-rate: 138
+  color: black
+- name: Aerobic Endurance
+  min-heart-rate: 138
+  max-heart-rate: 156
+  color: blue
+- name: Aerobic Power
+  min-heart-rate: 156
+  max-heart-rate: 164
+  color: green
+- name: Threshold
+  min-heart-rate: 164
+  max-heart-rate: 176
+  color: yellow
+- name: Anaerobic Endurance
+  min-heart-rate: 176
+  max-heart-rate: 183
+  color: orange
+- name: Anaerobic Power
+  min-heart-rate: 183
+  max-heart-rate: 999
+  color: red
+
