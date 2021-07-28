@@ -69,6 +69,8 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
 def gen_dataframe(xaxis, fnames, force=False):
     import pandas as pd
     import plotly.express as px
+    import plotly.offline as py
+    import plotly.graph_objs as go
 
     assert xaxis in ["relative", "absolute", "distance"]
     if xaxis == "absolute" and len(fnames) > 1 and force is False:
@@ -79,12 +81,12 @@ def gen_dataframe(xaxis, fnames, force=False):
         xaxis = "distance"
     else:
         xaxis = "rel_time"
-        start = None
 
     yaxes = fields_list(fnames)
 
     data = list()
     for fname in fnames:
+        start = None
         f_data = {xaxis: list()}
         for yaxis in yaxes:
             f_data["{}_{}".format(fname, yaxis)] = list()
@@ -107,15 +109,21 @@ def gen_dataframe(xaxis, fnames, force=False):
 
     # Convert dictionaries to dataframes
     data = [ pd.DataFrame(_) for _ in data ] 
-    result = pd.concat(data, axis=1)
+    result = pd.merge(data[0], data[1], on=xaxis, how='outer')
+    print(result)
+    print(result.dtypes)
     # Fill NaN with 0 (TEST)
     result.fillna(0)
+    # Exclude dtypes that aren't float64
+    result = result.select_dtypes(include=["float64", "int64"])
     if xaxis == "timestamp":
         result["timestamp"] = pd.to_datetime(result["timestamp"], unit='s')
 
-    fig = px.line(result)
-    fig.show()
-
+    #traces = [go.Scatter(x=result[xaxis], y=result[col], name=col) for col in result.columns]
+    #fig = px.scatter(x=result[xaxis], y=result["Run20210721072634.fit_distance"])
+    fig = px.line(result, x=xaxis, y=result.columns)
+    fig.update_layout(hovermode="x")
+    fig.show() 
     return result
     
 
