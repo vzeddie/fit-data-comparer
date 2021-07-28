@@ -69,7 +69,6 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
 def gen_dataframe(xaxis, fnames, force=False):
     import pandas as pd
     import plotly.express as px
-    import plotly.offline as py
     import plotly.graph_objs as go
 
     assert xaxis in ["relative", "absolute", "distance"]
@@ -89,7 +88,7 @@ def gen_dataframe(xaxis, fnames, force=False):
         start = None
         f_data = {xaxis: list()}
         for yaxis in yaxes:
-            f_data["{}_{}".format(fname, yaxis)] = list()
+            f_data["{}.{}".format(fname, yaxis)] = list()
         with fitdecode.FitReader(fname) as f:
             for frame in f:
                 if isinstance(frame, fitdecode.FitDataMessage) and frame.global_mesg_num == 0x14:
@@ -102,9 +101,9 @@ def gen_dataframe(xaxis, fnames, force=False):
                     
                     for yaxis in yaxes:
                         if frame.has_field(yaxis):
-                            f_data["{}_{}".format(fname, yaxis)].append(frame.get_field(yaxis).value)
+                            f_data["{}.{}".format(fname, yaxis)].append(frame.get_field(yaxis).value)
                         else:
-                            f_data["{}_{}".format(fname, yaxis)].append(None)
+                            f_data["{}.{}".format(fname, yaxis)].append(None)
         data.append(f_data)
 
     # Convert dictionaries to dataframes
@@ -119,12 +118,19 @@ def gen_dataframe(xaxis, fnames, force=False):
     if xaxis == "timestamp":
         result["timestamp"] = pd.to_datetime(result["timestamp"], unit='s')
 
-    #traces = [go.Scatter(x=result[xaxis], y=result[col], name=col) for col in result.columns]
-    #fig = px.scatter(x=result[xaxis], y=result["Run20210721072634.fit_distance"])
+    return result
+
+def show_dash(df):
+    import dash
+    import dash_core_components as dcc
+    import dash_html_components as html
+    from dash.dependencies import Input, Output
+
+    """
     fig = px.line(result, x=xaxis, y=result.columns)
     fig.update_layout(hovermode="x")
     fig.show() 
-    return result
+    """
     
 
 # 1. Ask a user which field(s) they want to chart over
@@ -152,6 +158,6 @@ if __name__ == "__main__":
         exit(0)
 
     result = gen_dataframe(args.xaxis, args.files)
-
+    show_dash(result)
     
     
