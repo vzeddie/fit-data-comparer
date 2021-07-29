@@ -18,4 +18,4 @@ Modify `run.py` at your convenience to serve the website along another port or w
 
 # v0.1 GIF
 
-![v0.1](img/v0.1.gif)
+> ![v0.1](img/v0.1.gif)
