@@ -1,8 +1,21 @@
 #!/usr/bin/python3
 
+# General
 import fitdecode
 import argparse
 from sys import exit
+from copy import deepcopy
+from functools import reduce
+# Pandas
+import pandas as pd
+# Plotly
+import plotly.express as px
+import plotly.graph_objs as go
+# Plotly-Dash
+import dash
+import dash_core_components as dcc
+import dash_html_components as html
+from dash.dependencies import Input, Output
 
 """
 TODO:
@@ -66,88 +79,104 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
         return ans   
 
 # Returns dataframe with all yaxes
-def gen_dataframe(xaxis, fnames, force=False):
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objs as go
-
-    assert xaxis in ["relative", "absolute", "distance"]
-    if xaxis == "absolute" and len(fnames) > 1 and force is False:
-        exit("Your input has multiple files and you've chosen to have the x-axis be absolute timestamps. Chances are that your data isn't going to have the same timestamps so they won't be on the same plot. If you're sure you want to do this, use the '--force' option")
-    if xaxis == "absolute":
-        xaxis = "timestamp"
-    elif xaxis == "distance":
-        xaxis = "distance"
-    else:
-        xaxis = "rel_time"
+def gen_dataframes(fnames, force=False):
 
     yaxes = fields_list(fnames)
+    valid_xaxes = ["distance", "timestamp", "rel_time"]
 
-    data = list()
+    data = dict()
     for fname in fnames:
         start = None
-        f_data = {xaxis: list()}
+        f_data = { "rel_time": list() }
         for yaxis in yaxes:
-            f_data["{}.{}".format(fname, yaxis)] = list()
+            f_data[yaxis] = list()
         with fitdecode.FitReader(fname) as f:
             for frame in f:
                 if isinstance(frame, fitdecode.FitDataMessage) and frame.global_mesg_num == 0x14:
-                    if xaxis == "rel_time":
-                        if start is None:
-                            start = frame.get_field("timestamp").raw_value
-                        f_data[xaxis].append(frame.get_field("timestamp").raw_value - start)
-                    else:
-                        f_data[xaxis].append(frame.get_field(xaxis).raw_value)
+                    if start is None:
+                        start = frame.get_field("timestamp").raw_value
+                    f_data["rel_time"].append(frame.get_field("timestamp").raw_value - start)
                     
                     for yaxis in yaxes:
-                        if frame.has_field(yaxis):
-                            f_data["{}.{}".format(fname, yaxis)].append(frame.get_field(yaxis).value)
+                        if yaxis == "timestamp":
+                            f_data[yaxis].append(frame.get_field(yaxis).raw_value)
                         else:
-                            f_data["{}.{}".format(fname, yaxis)].append(None)
-        data.append(f_data)
+                            if frame.has_field(yaxis):
+                                f_data[yaxis].append(frame.get_field(yaxis).value)
+                            else:
+                                f_data[yaxis].append(None)
+        data[fname] = deepcopy(f_data)
 
     # Convert dictionaries to dataframes
-    data = [ pd.DataFrame(_) for _ in data ] 
-    result = pd.merge(data[0], data[1], on=xaxis, how='outer')
-    print(result)
-    print(result.dtypes)
-    # Fill NaN with 0 (TEST)
-    result.fillna(0)
-    # Exclude dtypes that aren't float64
-    result = result.select_dtypes(include=["float64", "int64"])
-    if xaxis == "timestamp":
-        result["timestamp"] = pd.to_datetime(result["timestamp"], unit='s')
+    for fname, d in data.items():
+        d = pd.DataFrame(d)
+        d["timestamp"] = pd.to_datetime(d["timestamp"], unit='s')
+        d = d.add_prefix("{}.".format(fname))
+        for valid_xaxis in valid_xaxes:
+            d[valid_xaxis] = d["{}.{}".format(fname, valid_xaxis)].copy()
+        data[fname] = d
 
+    return list(data.values())
+
+def merge_dataframes(xaxis, dfs):
+    #result = pd.merge(dfs[0], dfs[1], on=xaxis, how='outer')
+    result = reduce(lambda left,right: pd.merge(left, right, on=xaxis, how='outer'), dfs) 
+    # Exclude dtypes that aren't numbers
+    result = result.select_dtypes(include=["float64", "int64"])
     return result
 
-def show_dash(df):
-    import dash
-    import dash_core_components as dcc
-    import dash_html_components as html
-    from dash.dependencies import Input, Output
+# TODO
+def gen_general_stats():
+    pass
 
+def show_dash(df):
+
+    app = dash.Dash(__name__)
+    yaxes = dict()
+    for c in list(df.columns):
+        tmp = c.split('.')
+        if tmp[-1] not in yaxes:
+            yaxes[tmp[-1]] = list()
+        yaxes[tmp[-1]].append(c)
+
+    xaxes = ["distance", "timestamp", "rel_time"]
+    
+    app.layout = html.Div([
+        dcc.Checklist(
+            id = "yaxis_selection",
+            options = [ {"label": x, "value": x} for x in yaxes ],
+            value = ["speed"],
+            labelStyle={"display": "inline-block"}
+        ), dcc.Graph(id="line-chart")])
+
+    
+    @app.callback(
+        Output("line-chart", "figure"), [Input("yaxis_selection", "value")]
+    )
+    def update_line_chart(yaxes_selection):
+        mask = ["rel_time"]
+        for yaxis_selection in yaxes_selection:
+            mask += yaxes[yaxis_selection]
+        fig = px.line(df[mask], x="rel_time", y=mask)
+        return fig
+
+    app.run_server(debug=True)
+        
     """
     fig = px.line(result, x=xaxis, y=result.columns)
     fig.update_layout(hovermode="x")
     fig.show() 
     """
+        
     
 
-# 1. Ask a user which field(s) they want to chart over
-"""
-Default: speed, heart rate, distance, cadence - required fields as per https://developer.garmin.com/fit/protocol/ (Record 7)
-"""
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xaxis", "-x", help="Use one of: 'absolute', 'relative', or 'distance'.\n'absolute' - use epoch timestamps given by the .fit file as the x-axis\n'relative' - use relative timestamps where your time starts at 0 and every second into the workout is +1 second\n'distance' - use distance as the x-axis\n'Default: 'absolute'", default="absolute")
     parser.add_argument("--list-fields", "-l", help="Lists all the available fields in all files", action='store_true')
     parser.add_argument("--force", help="Forces multiple .fit files into the same plot", action='store_true')
     # TODO
-    #parser.add_argument("--interactive", help="Interactively choose the options you want to use", action='store_true')
     #parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones in yaml format", type=argparse.FileType('r'), default="config.yaml")
-    # not sure i need this anymore
-    #parser.add_argument("--fields", "--yaxis", "-y", help="The fields within the .fit files you wish you chart over") 
     parser.add_argument("--files", help="Space separated list of .fit files to parse through", required=True, nargs="+")
     args = parser.parse_args()
 
@@ -157,7 +186,9 @@ if __name__ == "__main__":
             print(_)
         exit(0)
 
-    result = gen_dataframe(args.xaxis, args.files)
+    dfs = gen_dataframes(args.files)
+    result = merge_dataframes("rel_time", dfs)
+
     show_dash(result)
     
     
