@@ -42,6 +42,9 @@ So much....
 * Create a dockerized version of this application
 * Show general stats
 * Allow conversion of axis units (e.g., m/s to mph)
+* Show splits as vertical lines on the graph (splits as some input)
+* Somehow show distance at time, or time at distance
+* Allow you to use multiple Y axes
 
 # XREFs
 
