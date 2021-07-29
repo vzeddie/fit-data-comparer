@@ -4,6 +4,10 @@ I do a lot of the same routes for run training so I can see my progress along th
 
 I'm building this small python app to allow anyone with the technical know-how to run their own workout charting and analysis application!
 
+#### v0.1 GIF
+
+> ![v0.1](img/v0.1.gif)
+
 # Requirements
 
 * `python3`
@@ -14,7 +18,7 @@ I'm building this small python app to allow anyone with the technical know-how t
 
 # Usage
 
-Input files should be [FIT](https://developer.garmin.com/fit/protocol/) files.
+Input files should be [FIT](https://developer.garmin.com/fit/protocol/) files. This is a common format that most modern fitness trackers can export to.
 
 `python3 run.py --files 1.fit 2.fit 3.fit`
 
@@ -24,9 +28,6 @@ When you see that the server has started, go to `http://localhost:8050`
 
 Modify `run.py` at your convenience to serve the website along another port or whatever you want
 
-# v0.1 GIF
-
-> ![v0.1](img/v0.1.gif)
 
 # TODO
 
@@ -41,3 +42,12 @@ So much....
 * Create a dockerized version of this application
 * Show general stats
 * Allow conversion of axis units (e.g., m/s to mph)
+
+# XREFs
+
+* https://developer.garmin.com/fit/protocol/ - Garmin's documentation on how the FIT binary file works (unfortunately, their first-party SDK is only available for Java, C, C++, and C#)
+* https://fitdecode.readthedocs.io/en/latest/ - `polyvertex/fitdecode` wrote this neat Python module to read and parse FIT files
+
+# Others
+
+* I am using a Coros Apex 42mm running watch and a Polar H10 chest heart rate monitor. The data I gather from Coros may utilize different fields than data coming from Garmin. The FIT file standard allows for individual companies/developers to add custom fields at their whim
