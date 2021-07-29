@@ -3,9 +3,10 @@
 # General
 import fitdecode
 import argparse
-from sys import exit
+import sys
 from copy import deepcopy
 from functools import reduce
+import logging
 # Pandas
 import pandas as pd
 # Plotly
@@ -16,6 +17,19 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+
+# Logging setup
+logf = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+log = logging.getLogger()
+log.setLevel(logging.DEBUG)
+# - Log to file
+fhandler = logging.FileHandler("{}.log".format("dash"))
+fhandler.setFormatter(logf)
+log.addHandler(fhandler)
+# - Stream handler to stdout
+shandler = logging.StreamHandler(sys.stdout)
+shandler.setFormatter(logf)
+log.addHandler(shandler)
 
 """
 TODO:
@@ -81,11 +95,14 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
 # Returns dataframe with all yaxes
 def gen_dataframes(fnames, force=False):
 
+    log.info("Generating dataframes for {} files".format(len(fnames)))
+
     yaxes = fields_list(fnames)
     valid_xaxes = ["distance", "timestamp", "rel_time"]
 
     data = dict()
     for fname in fnames:
+        log.debug("Start generating JSON for {}".format(fname))
         start = None
         f_data = { "rel_time": list() }
         for yaxis in yaxes:
@@ -106,8 +123,10 @@ def gen_dataframes(fnames, force=False):
                             else:
                                 f_data[yaxis].append(None)
         data[fname] = deepcopy(f_data)
+        log.debug("Finished generating JSON for {}".format(fname))
 
     # Convert dictionaries to dataframes
+    log.debug("Converting JSONs to dataframes")
     for fname, d in data.items():
         d = pd.DataFrame(d)
         d["timestamp"] = pd.to_datetime(d["timestamp"], unit='s')
@@ -116,10 +135,12 @@ def gen_dataframes(fnames, force=False):
             d[valid_xaxis] = d["{}.{}".format(fname, valid_xaxis)].copy()
         data[fname] = d
 
-    return list(data.values())
+    log.info("Finished generating dataframes")
+    return data
 
 def merge_dataframes(xaxis, dfs):
     #result = pd.merge(dfs[0], dfs[1], on=xaxis, how='outer')
+    log.debug("Merging dataframes along x-axis: {}".format(xaxis))
     result = reduce(lambda left,right: pd.merge(left, right, on=xaxis, how='outer'), dfs) 
     # Exclude dtypes that aren't numbers
     result = result.select_dtypes(include=["float64", "int64"])
@@ -129,66 +150,72 @@ def merge_dataframes(xaxis, dfs):
 def gen_general_stats():
     pass
 
-def show_dash(df):
+def show_dash(dfs_dict):
 
     app = dash.Dash(__name__)
     yaxes = dict()
-    for c in list(df.columns):
-        tmp = c.split('.')
-        if tmp[-1] not in yaxes:
-            yaxes[tmp[-1]] = list()
-        yaxes[tmp[-1]].append(c)
+    for df in dfs_dict.values():
+        for c in list(df.columns):
+            tmp = c.split('.')
+            if tmp[-1] not in yaxes:
+                yaxes[tmp[-1]] = list()
+            yaxes[tmp[-1]].append(c)
 
-    xaxes = ["distance", "timestamp", "rel_time"]
-    
-    app.layout = html.Div([
+    #xaxes = ["distance", "timestamp", "rel_time"]
+    xaxes = ["distance", "rel_time"]
+    loaded_files_markdown = ["### Loaded files:"] + [" * {}".format(_) for _ in list(dfs_dict.keys())]
+
+    app.layout = html.Div(children=[
+        dcc.Markdown('\n'.join(loaded_files_markdown)),
         dcc.Checklist(
-            id = "yaxis_selection",
+            id = "yaxes_selection",
             options = [ {"label": x, "value": x} for x in yaxes ],
             value = ["speed"],
             labelStyle={"display": "inline-block"}
-        ), dcc.Graph(id="line-chart")])
+        ), 
+        dcc.Dropdown(
+            id = "xaxis_selection",
+            options = [ {"label": x, "value": x} for x in xaxes ],
+            value = ["rel_time"]
+        ),
+        dcc.Graph(id="line-chart")
+    ])
 
     
     @app.callback(
-        Output("line-chart", "figure"), [Input("yaxis_selection", "value")]
+        Output("line-chart", "figure"), 
+        [Input("xaxis_selection", "value")],
+        [Input("yaxes_selection", "value")],
+        # TODO
+        # find a way to shift dataset across x or y axis
+        #[Input("shift-x", "value")]
     )
-    def update_line_chart(yaxes_selection):
-        mask = ["rel_time"]
+    def update_graph(xaxis_selection, yaxes_selection):
+        if isinstance(xaxis_selection, list):
+            xaxis_selection = xaxis_selection[0]
+        mask = [xaxis_selection]
+        log.debug("Update graph xaxis: " + str(xaxis_selection))
+        log.debug("Update graph yaxis: " + str(yaxes_selection))
+        df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
         for yaxis_selection in yaxes_selection:
             mask += yaxes[yaxis_selection]
-        fig = px.line(df[mask], x="rel_time", y=mask)
+        log.debug("Update graph mask: " + str(mask))
+        fig = px.line(df[mask], x=xaxis_selection, y=mask)
+        fig.update_layout(hovermode='x')
         return fig
 
     app.run_server(debug=True)
-        
-    """
-    fig = px.line(result, x=xaxis, y=result.columns)
-    fig.update_layout(hovermode="x")
-    fig.show() 
-    """
-        
     
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--list-fields", "-l", help="Lists all the available fields in all files", action='store_true')
     parser.add_argument("--force", help="Forces multiple .fit files into the same plot", action='store_true')
     # TODO
     #parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones in yaml format", type=argparse.FileType('r'), default="config.yaml")
     parser.add_argument("--files", help="Space separated list of .fit files to parse through", required=True, nargs="+")
     args = parser.parse_args()
 
-    if args.list_fields:
-        ret = fields_list(args.files, print_result=True)
-        for _ in ret:
-            print(_)
-        exit(0)
+    dfs_dict = gen_dataframes(args.files)
 
-    dfs = gen_dataframes(args.files)
-    result = merge_dataframes("rel_time", dfs)
-
-    show_dash(result)
-    
-    
+    show_dash(dfs_dict)
