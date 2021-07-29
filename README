@@ -15,3 +15,7 @@ When you see that the server has started, go to `http://localhost:8050`
 ## Modifications
 
 Modify `run.py` at your convenience to serve the website along another port or whatever you want
+
+# v0.1 GIF
+
+![v0.1](img/v0.1.gif)
