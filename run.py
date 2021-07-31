@@ -48,6 +48,15 @@ def meters_to_miles(meters, sig_figs=2):
 def miles_to_meters(miles, sig_figs=2):
     return round(miles * 1609.344, sig_figs)
 
+# Meters per second to seconds per kilometer
+def mps_to_spk(mps, sig_figs=2):
+    if mps == 0:
+        return 0
+    elif mps is None:
+        return None
+    else:
+        return round((1/mps) * 1000, sig_figs)
+
 # Returns a list of fields and the unit of measurement for that field
 def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
     ans = dict()
@@ -93,7 +102,7 @@ def fields_list(fnames, sig_figs=2, print_result=False, verbose=False):
         return ans   
 
 # Returns dataframe with all yaxes
-def gen_dataframes(fnames, force=False):
+def gen_dataframes(fnames, force=False, sig_figs=2):
 
     log.info("Generating dataframes for {} files".format(len(fnames)))
 
@@ -104,9 +113,14 @@ def gen_dataframes(fnames, force=False):
     for fname in fnames:
         log.debug("Start generating JSON for {}".format(fname))
         start = None
-        f_data = { "rel_time": list() }
+        # Initialize a dictionary of lists
+        f_data = { 
+                "rel_time": list(),
+                "pace": list()
+                }
         for yaxis in yaxes:
             f_data[yaxis] = list()
+
         with fitdecode.FitReader(fname) as f:
             for frame in f:
                 if isinstance(frame, fitdecode.FitDataMessage) and frame.global_mesg_num == 0x14:
@@ -122,6 +136,21 @@ def gen_dataframes(fnames, force=False):
                                 f_data[yaxis].append(frame.get_field(yaxis).value)
                             else:
                                 f_data[yaxis].append(None)
+
+                    """
+                    Extra per-data message calculations
+                    """
+                    if frame.has_field("speed"):
+                        if frame.get_field("speed").units == "m/s":
+                            # Pace calulations here. Asserts that units are in m/s
+                            f_data["pace"].append(mps_to_spk(frame.get_field("speed").value))
+                        else:
+                            log.warning("Frame has speed {} but units are not in m/s. It is in {}".format(frame.get_field("speed").value, frame.get_field("speed").units))
+                    else:
+                        f_data["pace"].append(None)
+
+                                
+
         data[fname] = deepcopy(f_data)
         log.debug("Finished generating JSON for {}".format(fname))
 
