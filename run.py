@@ -209,7 +209,7 @@ def show_dash(dfs_dict):
             value = ["rel_time"]
         ),
         dcc.Graph(id="line-chart"),
-        dcc.Textarea(id="yaxes_warning", value="", style={"width": "100%", "height": 50})
+        html.P(id="yaxes_warning", children=["OK"])
     ])
 
     
@@ -272,7 +272,7 @@ def show_dash(dfs_dict):
         return fig
 
     @app.callback(
-            Output("yaxes_warning", "value"),
+            Output("yaxes_warning", "children"),
             Output("yaxes_selection", "value"),
             Input("yaxes_selection", "value")
             )
