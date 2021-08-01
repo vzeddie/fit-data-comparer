@@ -235,11 +235,6 @@ def show_dash(dfs_dict):
             df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
             fig = go.Figure()
             layout = {"hovermode": "x"}
-            left_layout_offset = 0.1
-            right_layout_offset = 1
-            
-            layout_first = True
-            put_yaxis_right = False
             for i,yaxis_selection in enumerate(yaxes_selection):
                 yaxis_name = "yaxis{}".format(str(i+1) * (i > 0))
                 yaxis_id = "y{}".format(str(i+1) * (i > 0))
@@ -269,38 +264,7 @@ def show_dash(dfs_dict):
                     layout[yaxis_name] = {"title": yaxis_selection}
                 else:
                     layout[yaxis_name] = {"title": yaxis_selection, "overlaying": "y", "anchor": "x", "side": "right"}
-                """
-                if layout_first:
-                    layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection}
-                    layout_first = False
-                else:
-
-                    # TODO - fix colors
-
-                    # Place on the right side
-                    if put_yaxis_right:
-                        log.debug("Putting {} data on new yaxis on right side: {} @ offset: {}".format(yaxis_selection, put_yaxis_right, right_layout_offset))
-                        if right_layout_offset == 0:
-                            layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "x", "side": "right"}
-                        else:
-                            layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "free", "side": "right", "position": right_layout_offset}
-                        #right_layout_offset -= 0.1
-                    # Place on the left side
-                    else:
-                        log.debug("Putting {} data on new yaxis on right side: {} @ offset: {}".format(yaxis_selection, put_yaxis_right, left_layout_offset))
-                        layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "free", "side": "left", "position": left_layout_offset}
-                        #left_layout_offset += 0.1
-
-                #layout["width"] = 1000 - ((left_layout_offset/0.1)-1)
-                y_counter += 1
-                """
-                layout["height"] = 650
-                #layout["width"] = 1600
-                layout["margin"] = dict(pad=i*100)
-                layout["paper_bgcolor"] = "LightSteelBlue"
-                put_yaxis_right = not put_yaxis_right
             fig.update_layout(layout)
-            fig.update_yaxes(automargin=True)
             return fig
 
     app.run_server(debug=True)
