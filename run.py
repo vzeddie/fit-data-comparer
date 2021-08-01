@@ -17,6 +17,7 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+import dash_bootstrap_components as dbc
 
 # Logging setup
 logf = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
@@ -181,7 +182,7 @@ def gen_general_stats():
 
 def show_dash(dfs_dict):
 
-    app = dash.Dash(__name__)
+    app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
     yaxes = dict()
     for df in dfs_dict.values():
         for c in list(df.columns):
@@ -222,49 +223,85 @@ def show_dash(dfs_dict):
     def update_graph(xaxis_selection, yaxes_selection):
         if isinstance(xaxis_selection, list):
             xaxis_selection = xaxis_selection[0]
-        mask = [xaxis_selection]
-        log.debug("Update graph xaxis: " + str(xaxis_selection))
-        log.debug("Update graph yaxis: " + str(yaxes_selection))
-        df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
-        #fig = px.line(df[mask], x=xaxis_selection, y=mask)
-        fig = go.Figure()
-        layout = {"hovermode": "x"}
-        y_counter = 1
-        layout_first = True
-        left_layout_offset = 0.2
-        right_layout_offset = 0
-        for i,yaxis_selection in enumerate(yaxes_selection):
-            for file_specific_yaxis_selection in yaxes[yaxis_selection]:
-                log.info("Adding trace: yaxis ID: y{} - {}".format(y_counter, file_specific_yaxis_selection))
-                fig.add_trace(
-                        go.Scatter(
-                            x=df[xaxis_selection], 
-                            y=df[file_specific_yaxis_selection], 
-                            name=file_specific_yaxis_selection,
-                            yaxis="y{}".format(y_counter)
+
+        # TODO - throw a warning in the GUI
+        if len(yaxes_selection) > 2:
+            log.warning("Unable to select more than 2 yaxes and put them all on the graph")
+            mask = mask[:2]
+        else:
+            mask = [xaxis_selection]
+            log.debug("Update graph xaxis: " + str(xaxis_selection))
+            log.debug("Update graph yaxis: " + str(yaxes_selection))
+            df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
+            fig = go.Figure()
+            layout = {"hovermode": "x"}
+            left_layout_offset = 0.1
+            right_layout_offset = 1
+            
+            layout_first = True
+            put_yaxis_right = False
+            for i,yaxis_selection in enumerate(yaxes_selection):
+                yaxis_name = "yaxis{}".format(str(i+1) * (i > 0))
+                yaxis_id = "y{}".format(str(i+1) * (i > 0))
+                for file_specific_yaxis_selection in yaxes[yaxis_selection]:
+                    log.info("Adding trace: yaxis ID: {} - {}".format(yaxis_id, file_specific_yaxis_selection))
+                    # Pace axis needs to be used upside down with greater values on the bottom and lower values up top
+                    if yaxis_selection == "pace":
+                        fig.add_trace(
+                                go.Scatter(
+                                    x=df[xaxis_selection], 
+                                    y=df[file_specific_yaxis_selection], 
+                                    name=file_specific_yaxis_selection,
+                                    yaxis=yaxis_id,
+                                    autorange="reversed"
+                                    )
                             )
-                    )
-            if layout_first:
-                layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection}
-                layout_first = False
-            else:
-
-                # TODO BUG - fix positioning of axes
-                # TODO - fix colors
-
-                # Place on the right side
-                if left_layout_offset > right_layout_offset:
-                    if right_layout_offset == 0:
-                        layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y", "anchor": "x", "side": "right"}
                     else:
-                        layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y", "anchor": "free", "side": "right", "position": right_layout_offset}
-                    right_layout_offset += 0.20
-                # Place on the left side
+                        fig.add_trace(
+                                go.Scatter(
+                                    x=df[xaxis_selection], 
+                                    y=df[file_specific_yaxis_selection], 
+                                    name=file_specific_yaxis_selection,
+                                    yaxis=yaxis_id
+                                    )
+                            )
+                if i == 0:
+                    layout[yaxis_name] = {"title": yaxis_selection}
                 else:
-                    layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y", "anchor": "free", "side": "left", "position": left_layout_offset}
-            y_counter += 1
-        fig.update_layout(layout)
-        return fig
+                    layout[yaxis_name] = {"title": yaxis_selection, "overlaying": "y", "anchor": "x", "side": "right"}
+                """
+                if layout_first:
+                    layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection}
+                    layout_first = False
+                else:
+
+                    # TODO - fix colors
+
+                    # Place on the right side
+                    if put_yaxis_right:
+                        log.debug("Putting {} data on new yaxis on right side: {} @ offset: {}".format(yaxis_selection, put_yaxis_right, right_layout_offset))
+                        if right_layout_offset == 0:
+                            layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "x", "side": "right"}
+                        else:
+                            layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "free", "side": "right", "position": right_layout_offset}
+                        #right_layout_offset -= 0.1
+                    # Place on the left side
+                    else:
+                        log.debug("Putting {} data on new yaxis on right side: {} @ offset: {}".format(yaxis_selection, put_yaxis_right, left_layout_offset))
+                        layout["yaxis{}".format(y_counter)] = {"title": yaxis_selection, "overlaying": "y{}".format(y_counter), "anchor": "free", "side": "left", "position": left_layout_offset}
+                        #left_layout_offset += 0.1
+
+                #layout["width"] = 1000 - ((left_layout_offset/0.1)-1)
+                y_counter += 1
+                """
+                layout["height"] = 650
+                #layout["width"] = 1600
+                layout["margin"] = dict(pad=i*100)
+                layout["paper_bgcolor"] = "LightSteelBlue"
+                put_yaxis_right = not put_yaxis_right
+            fig.update_layout(layout)
+            fig.update_yaxes(automargin=True)
+            return fig
 
     app.run_server(debug=True)
     
