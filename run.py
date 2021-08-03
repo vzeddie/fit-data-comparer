@@ -17,6 +17,7 @@ import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output
+import dash_bootstrap_components as dbc
 
 # Logging setup
 logf = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
@@ -181,7 +182,7 @@ def gen_general_stats():
 
 def show_dash(dfs_dict):
 
-    app = dash.Dash(__name__)
+    app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
     yaxes = dict()
     for df in dfs_dict.values():
         for c in list(df.columns):
@@ -207,7 +208,8 @@ def show_dash(dfs_dict):
             options = [ {"label": x, "value": x} for x in xaxes ],
             value = ["rel_time"]
         ),
-        dcc.Graph(id="line-chart")
+        dcc.Graph(id="line-chart"),
+        html.P(id="yaxes_warning", children=["OK"])
     ])
 
     
@@ -220,18 +222,66 @@ def show_dash(dfs_dict):
         #[Input("shift-x", "value")]
     )
     def update_graph(xaxis_selection, yaxes_selection):
+        log.info("Updating graph")
         if isinstance(xaxis_selection, list):
             xaxis_selection = xaxis_selection[0]
+
+        # TODO - throw a warning in the GUI
+        if len(yaxes_selection) > 2:
+            log.warning("Unable to select more than 2 yaxes and put them all on the graph. Just going to chop off everything after the 2nd checkbox")
+            yaxes_selection = yaxes_selection[2:]
+
         mask = [xaxis_selection]
         log.debug("Update graph xaxis: " + str(xaxis_selection))
         log.debug("Update graph yaxis: " + str(yaxes_selection))
         df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
-        for yaxis_selection in yaxes_selection:
-            mask += yaxes[yaxis_selection]
-        log.debug("Update graph mask: " + str(mask))
-        fig = px.line(df[mask], x=xaxis_selection, y=mask)
-        fig.update_layout(hovermode='x')
+        fig = go.Figure()
+        layout = {"hovermode": "x"}
+        for i,yaxis_selection in enumerate(yaxes_selection):
+            yaxis_name = "yaxis{}".format(str(i+1) * (i > 0))
+            yaxis_id = "y{}".format(str(i+1) * (i > 0))
+            for file_specific_yaxis_selection in yaxes[yaxis_selection]:
+                log.info("Adding trace: yaxis ID: {} - {}".format(yaxis_id, file_specific_yaxis_selection))
+                # Pace axis needs to be used upside down with greater values on the bottom and lower values up top
+                if yaxis_selection == "pace":
+                    fig.add_trace(
+                            go.Scatter(
+                                x=df[xaxis_selection], 
+                                y=df[file_specific_yaxis_selection], 
+                                name=file_specific_yaxis_selection,
+                                yaxis=yaxis_id,
+                                autorange="reversed"
+                                )
+                        )
+                else:
+                    fig.add_trace(
+                            go.Scatter(
+                                x=df[xaxis_selection], 
+                                y=df[file_specific_yaxis_selection], 
+                                name=file_specific_yaxis_selection,
+                                yaxis=yaxis_id
+                                )
+                        )
+            if i == 0:
+                layout[yaxis_name] = {"title": yaxis_selection}
+            else:
+                layout[yaxis_name] = {"title": yaxis_selection, "overlaying": "y", "anchor": "x", "side": "right"}
+
+            layout["margin"] = {"r": 50}
+        fig.update_layout(layout)
         return fig
+
+    @app.callback(
+            Output("yaxes_warning", "children"),
+            Output("yaxes_selection", "value"),
+            Input("yaxes_selection", "value")
+            )
+    def use_yaxes_warning(selection):
+        log.info("Throwing yaxis warning")
+        if len(selection) > 2:
+            return "You can only use up to two y axes!", selection[:2]
+        else:
+            return "", selection
 
     app.run_server(debug=True)
     
