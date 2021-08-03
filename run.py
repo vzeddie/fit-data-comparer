@@ -7,6 +7,7 @@ import sys
 from copy import deepcopy
 from functools import reduce
 import logging
+import yaml
 # Pandas
 import pandas as pd
 # Plotly
@@ -284,6 +285,11 @@ def show_dash(dfs_dict):
             return "", selection
 
     app.run_server(debug=True)
+
+def load_config(config_fname):
+    with open(config_fname, 'r') as infile:
+        doc = yaml.load(infile, yaml.SafeLoader)
+    return doc
     
 
 if __name__ == "__main__":
@@ -291,10 +297,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", help="Forces multiple .fit files into the same plot", action='store_true')
     # TODO
-    #parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones in yaml format", type=argparse.FileType('r'), default="config.yaml")
+    parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones and the Mapbox API key you're using in yaml format", default="config.yaml")
     parser.add_argument("--files", help="Space separated list of .fit files to parse through", required=True, nargs="+")
     args = parser.parse_args()
 
-    dfs_dict = gen_dataframes(args.files)
+    config = load_config(args.config)
 
-    show_dash(dfs_dict)
+    #dfs_dict = gen_dataframes(args.files)
+
+    #show_dash(dfs_dict)

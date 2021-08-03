@@ -25,3 +25,5 @@ heart-rate-zones:
   max-heart-rate: 999
   color: red
 
+
+mapbox_api_key: AAAA-BBBB-CCCC-DDDD
