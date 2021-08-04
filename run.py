@@ -109,6 +109,7 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
     log.info("Generating dataframes for {} files".format(len(fnames)))
 
     yaxes = fields_list(fnames)
+    print(yaxes)
     valid_xaxes = ["distance", "timestamp", "rel_time"]
 
     data = dict()
@@ -160,6 +161,7 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
     log.debug("Converting JSONs to dataframes")
     for fname, d in data.items():
         d = pd.DataFrame(d)
+        d = convert_lat_long(d)
         d["timestamp"] = pd.to_datetime(d["timestamp"], unit='s')
         d = d.add_prefix("{}.".format(fname))
         for valid_xaxis in valid_xaxes:
@@ -181,7 +183,13 @@ def merge_dataframes(xaxis, dfs):
 def gen_general_stats():
     pass
 
-def show_dash(dfs_dict):
+def convert_lat_long(df):
+    log.info("Converting lat/long from semicircles from GPS to standard lat/long coordinates")
+    df["position_lat"] = df["position_lat"] * 180 / (2^31)
+    df["position_long"] = df["position_long"] * 180 / (2^31)
+    return df
+
+def show_dash(dfs_dict, mapbox_api_key):
 
     app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
     yaxes = dict()
@@ -192,7 +200,6 @@ def show_dash(dfs_dict):
                 yaxes[tmp[-1]] = list()
             yaxes[tmp[-1]].append(c)
 
-    #xaxes = ["distance", "timestamp", "rel_time"]
     xaxes = ["distance", "rel_time"]
     loaded_files_markdown = ["### Loaded files:"] + [" * {}".format(_) for _ in list(dfs_dict.keys())]
 
@@ -210,7 +217,8 @@ def show_dash(dfs_dict):
             value = ["rel_time"]
         ),
         dcc.Graph(id="line-chart"),
-        html.P(id="yaxes_warning", children=["OK"])
+        html.P(id="yaxes_warning", children=["OK"]),
+        dcc.Graph(id="mapbox")
     ])
 
     
@@ -227,7 +235,6 @@ def show_dash(dfs_dict):
         if isinstance(xaxis_selection, list):
             xaxis_selection = xaxis_selection[0]
 
-        # TODO - throw a warning in the GUI
         if len(yaxes_selection) > 2:
             log.warning("Unable to select more than 2 yaxes and put them all on the graph. Just going to chop off everything after the 2nd checkbox")
             yaxes_selection = yaxes_selection[2:]
@@ -243,7 +250,6 @@ def show_dash(dfs_dict):
             yaxis_id = "y{}".format(str(i+1) * (i > 0))
             for file_specific_yaxis_selection in yaxes[yaxis_selection]:
                 log.info("Adding trace: yaxis ID: {} - {}".format(yaxis_id, file_specific_yaxis_selection))
-                # Pace axis needs to be used upside down with greater values on the bottom and lower values up top
                 if yaxis_selection == "pace":
                     fig.add_trace(
                             go.Scatter(
@@ -251,6 +257,7 @@ def show_dash(dfs_dict):
                                 y=df[file_specific_yaxis_selection], 
                                 name=file_specific_yaxis_selection,
                                 yaxis=yaxis_id,
+                                # Pace axis needs to be used upside down with greater values on the bottom and lower values up top
                                 autorange="reversed"
                                 )
                         )
@@ -284,6 +291,32 @@ def show_dash(dfs_dict):
         else:
             return "", selection
 
+    @app.callback(
+            Output("mapbox", "figure"),
+            [Input("xaxis_selection", "value")]
+            )
+    def generate_mapbox(xaxis_selection):
+        log.info("Generating mapbox")
+        lat_lon_pairs = dict()
+        for fname in dfs_dict.keys():
+            lat_lon_pairs[fname] = ("{}.position_lat".format(fname), "{}.position_long".format(fname))
+        df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
+        fig = go.Figure()
+        for fname, lat_lon in lat_lon_pairs.items():
+            fig.add_trace(go.Scattermapbox(
+                lat=df[lat_lon[0]],
+                lon=df[lat_lon[1]],
+                name=fname,
+                mode='lines'
+                ))
+            print(df[lat_lon[0]][:50])
+            print(df[lat_lon[1]][:50])
+        layout = dict()
+        layout["mapbox_accesstoken"] = mapbox_api_key
+        fig.update_layout(layout)
+
+        return fig
+
     app.run_server(debug=True)
 
 def load_config(config_fname):
@@ -302,7 +335,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = load_config(args.config)
-
-    #dfs_dict = gen_dataframes(args.files)
-
-    #show_dash(dfs_dict)
+    dfs_dict = gen_dataframes(args.files)
+    show_dash(dfs_dict, config["mapbox_api_key"])
