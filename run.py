@@ -185,8 +185,8 @@ def gen_general_stats():
 
 def convert_lat_long(df):
     log.info("Converting lat/long from semicircles from GPS to standard lat/long coordinates")
-    df["position_lat"] = df["position_lat"] * 180 / (2^31)
-    df["position_long"] = df["position_long"] * 180 / (2^31)
+    df["position_lat"] = df["position_lat"] * (180 / (2**31))
+    df["position_long"] = df["position_long"] * (180 / (2**31))
     return df
 
 def show_dash(dfs_dict, mapbox_api_key):
@@ -309,8 +309,6 @@ def show_dash(dfs_dict, mapbox_api_key):
                 name=fname,
                 mode='lines'
                 ))
-            print(df[lat_lon[0]][:50])
-            print(df[lat_lon[1]][:50])
         layout = dict()
         layout["mapbox_accesstoken"] = mapbox_api_key
         fig.update_layout(layout)
