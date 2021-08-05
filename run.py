@@ -274,6 +274,7 @@ def show_dash(dfs_dict, mapbox_api_key):
                 layout[yaxis_name] = {"title": yaxis_selection}
             else:
                 layout[yaxis_name] = {"title": yaxis_selection, "overlaying": "y", "anchor": "x", "side": "right"}
+            layout["hoverlabel"] = go.layout.Hoverlabel(namelength=-1)
 
             layout["margin"] = {"r": 50}
         fig.update_layout(layout)
