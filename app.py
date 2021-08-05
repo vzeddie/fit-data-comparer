@@ -17,7 +17,7 @@ import plotly.graph_objs as go
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State, ClientsideFunction
 import dash_bootstrap_components as dbc
 
 # Logging setup
@@ -109,7 +109,6 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
     log.info("Generating dataframes for {} files".format(len(fnames)))
 
     yaxes = fields_list(fnames)
-    print(yaxes)
     valid_xaxes = ["distance", "timestamp", "rel_time"]
 
     data = dict()
@@ -216,14 +215,20 @@ def show_dash(dfs_dict, mapbox_api_key):
             options = [ {"label": x, "value": x} for x in xaxes ],
             value = ["rel_time"]
         ),
-        dcc.Graph(id="line-chart"),
+        dcc.Graph(id="metrics_graph"),
         html.P(id="yaxes_warning", children=["OK"]),
-        dcc.Graph(id="mapbox")
+        dcc.Graph(id="mapbox"),
+        html.Div(id="dummy")
     ])
 
+    app.clientside_callback(
+        ClientsideFunction(namespace="clientside", function_name="trigger_hover"),
+        Output("dummy", "data-hover"),
+        [Input("mapbox", "hoverData")],
+    )
     
     @app.callback(
-        Output("line-chart", "figure"), 
+        Output("metrics_graph", "figure"), 
         [Input("xaxis_selection", "value")],
         [Input("yaxes_selection", "value")],
         # TODO
@@ -307,14 +312,19 @@ def show_dash(dfs_dict, mapbox_api_key):
             fig.add_trace(go.Scattermapbox(
                 lat=df[lat_lon[0]],
                 lon=df[lat_lon[1]],
+                customdata=df[xaxis_selection],
                 name=fname,
                 mode='lines'
                 ))
         layout = dict()
         layout["mapbox_accesstoken"] = mapbox_api_key
+        # Center the map along the first coordinate in the first file
+        #layout["mapbox_center"] = go.layout.mapbox.Center(lat=df[list(lat_lon_pairs.values())[0][0]][0], lon=df[list(lat_lon_pairs.values())[0][1]][0])
+        #layout["mapbox_zoom"] = 7
         fig.update_layout(layout)
 
         return fig
+
 
     app.run_server(debug=True)
 
