@@ -161,6 +161,7 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
     for fname, d in data.items():
         d = pd.DataFrame(d)
         d = convert_lat_long(d)
+        d = gen_lat_long_customdata(fname, d)
         d["timestamp"] = pd.to_datetime(d["timestamp"], unit='s')
         d = d.add_prefix("{}.".format(fname))
         for valid_xaxis in valid_xaxes:
@@ -175,7 +176,7 @@ def merge_dataframes(xaxis, dfs):
     log.debug("Merging dataframes along x-axis: {}".format(xaxis))
     result = reduce(lambda left,right: pd.merge(left, right, on=xaxis, how='outer'), dfs) 
     # Exclude dtypes that aren't numbers
-    result = result.select_dtypes(include=["float64", "int64"])
+    #result = result.select_dtypes(include=["float64", "int64", "string"])
     return result
 
 # TODO
@@ -183,24 +184,37 @@ def gen_general_stats():
     pass
 
 def convert_lat_long(df):
-    log.info("Converting lat/long from semicircles from GPS to standard lat/long coordinates")
+    log.debug("Converting lat/long from semicircles from GPS to standard lat/long coordinates")
     df["position_lat"] = df["position_lat"] * (180 / (2**31))
     df["position_long"] = df["position_long"] * (180 / (2**31))
     return df
 
+def gen_lat_long_customdata(fname, df):
+    log.debug("Generating customdata compatible info using lat/long")
+    df["_position_lat_long"] = ["{}|{},{}".format(fname, x,y) for x,y in zip(df["position_lat"], df["position_long"])]
+    return df
+
 def show_dash(dfs_dict, mapbox_api_key):
+
+    color_swatch = px.colors.qualitative.Alphabet
 
     app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
     yaxes = dict()
-    for df in dfs_dict.values():
+    col_to_fname = dict()
+    for fname,df in dfs_dict.items():
         for c in list(df.columns):
+            # Assumes that all FIT file fields don't have a period ('.') in the name of the field
             tmp = c.split('.')
             if tmp[-1] not in yaxes:
                 yaxes[tmp[-1]] = list()
             yaxes[tmp[-1]].append(c)
 
+            col_to_fname[c] = fname
+
     xaxes = ["distance", "rel_time"]
+
     loaded_files_markdown = ["### Loaded files:"] + [" * {}".format(_) for _ in list(dfs_dict.keys())]
+
 
     app.layout = html.Div(children=[
         dcc.Markdown('\n'.join(loaded_files_markdown)),
@@ -217,16 +231,63 @@ def show_dash(dfs_dict, mapbox_api_key):
         ),
         dcc.Graph(id="metrics_graph"),
         html.P(id="yaxes_warning", children=["OK"]),
-        dcc.Graph(id="mapbox"),
-        html.Div(id="dummy")
+        dcc.Graph(id="mapbox_graph"),
+        html.Div(id="metrics_dummy"),
+        html.Div(id="mapbox_dummy")
     ])
 
     app.clientside_callback(
-        ClientsideFunction(namespace="clientside", function_name="trigger_hover"),
-        Output("dummy", "data-hover"),
-        [Input("mapbox", "hoverData")],
+        """
+        function(hoverData) {
+            var myPlot = document.getElementById("metrics_graph")
+            if (!myPlot.children[1]) {
+                return window.dash_clientside.no_update
+            }
+            myPlot.children[1].id = "metrics_graph_js"
+
+            if (hoverData) {
+                if (Array.isArray(hoverData.points[0].customdata)) {
+                    var t = hoverData.points[0].customdata[0]
+                } else {
+                    var t = hoverData.points[0].customdata
+                }
+                t = Math.round(t*10)/10
+                Plotly.Fx.hover("metrics_graph_js", {xval: t, yval:0})
+            }
+            return window.dash_clientside.no_update
+        }
+        """,
+        #ClientsideFunction(namespace="clientside", function_name="trigger_map_to_metrics_hover"),
+        Output("metrics_dummy", "data-hover"),
+        [Input("mapbox_graph", "hoverData")],
     )
+
+    app.clientside_callback(
+        """
+        function(hoverData){
+            var myPlot = document.getElementById("mapbox_graph")
+            
+            if (!myPlot.children[1]) {
+                return window.dash_clientside.no_update
+            }
+            myPlot.children[1].id = "mapbox_js"
+
+            if (hoverData) {
+                console.log(hoverData)
+                Plotly.Fx.hover("mapbox_graph", {curveNumber:0, pointNumber:100})
+            }
+            console.log("AAAA")
+            return window.dash_clientside.no_update
+        }
+        """,
+        Output("mapbox_dummy", "data-hover"),
+        [Input("metrics_graph", "hoverData")],
+    )
+
+    distance_dfs = merge_dataframes("distance", list(dfs_dict.values()))
+    time_dfs = merge_dataframes("rel_time", list(dfs_dict.values()))
     
+    # TODO : change most of these to clientside instead of serverside
     @app.callback(
         Output("metrics_graph", "figure"), 
         [Input("xaxis_selection", "value")],
@@ -247,7 +308,7 @@ def show_dash(dfs_dict, mapbox_api_key):
         mask = [xaxis_selection]
         log.debug("Update graph xaxis: " + str(xaxis_selection))
         log.debug("Update graph yaxis: " + str(yaxes_selection))
-        df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
+        df = time_dfs if xaxis_selection == "rel_time" else distance_dfs
         fig = go.Figure()
         layout = {"hovermode": "x"}
         for i,yaxis_selection in enumerate(yaxes_selection):
@@ -262,6 +323,7 @@ def show_dash(dfs_dict, mapbox_api_key):
                                 y=df[file_specific_yaxis_selection], 
                                 name=file_specific_yaxis_selection,
                                 yaxis=yaxis_id,
+                                customdata=df["{}._position_lat_long".format(col_to_fname[file_specific_yaxis_selection])],
                                 # Pace axis needs to be used upside down with greater values on the bottom and lower values up top
                                 autorange="reversed"
                                 )
@@ -272,6 +334,7 @@ def show_dash(dfs_dict, mapbox_api_key):
                                 x=df[xaxis_selection], 
                                 y=df[file_specific_yaxis_selection], 
                                 name=file_specific_yaxis_selection,
+                                customdata=df["{}._position_lat_long".format(col_to_fname[file_specific_yaxis_selection])],
                                 yaxis=yaxis_id
                                 )
                         )
@@ -298,7 +361,7 @@ def show_dash(dfs_dict, mapbox_api_key):
             return "", selection
 
     @app.callback(
-            Output("mapbox", "figure"),
+            Output("mapbox_graph", "figure"),
             [Input("xaxis_selection", "value")]
             )
     def generate_mapbox(xaxis_selection):
@@ -306,6 +369,7 @@ def show_dash(dfs_dict, mapbox_api_key):
         lat_lon_pairs = dict()
         for fname in dfs_dict.keys():
             lat_lon_pairs[fname] = ("{}.position_lat".format(fname), "{}.position_long".format(fname))
+        #df = time_dfs if xaxis_selection == "rel_time" else distance_dfs
         df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
         fig = go.Figure()
         for fname, lat_lon in lat_lon_pairs.items():
@@ -335,14 +399,11 @@ def load_config(config_fname):
     
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
-    parser.add_argument("--force", help="Forces multiple .fit files into the same plot", action='store_true')
-    # TODO
     parser.add_argument("--config", '-c', help="Configuration file containing extra info such as heart rate zones and the Mapbox API key you're using in yaml format", default="config.yaml")
-    parser.add_argument("--files", help="Space separated list of .fit files to parse through", required=True, nargs="+")
+    parser.add_argument("--files", help="Space separated list of .fit files to parse through (max: 5 - we ignore anything after 5 files)", required=True, nargs="+")
     args = parser.parse_args()
 
     config = load_config(args.config)
-    dfs_dict = gen_dataframes(args.files)
+    dfs_dict = gen_dataframes(args.files[:5])
     show_dash(dfs_dict, config["mapbox_api_key"])
