@@ -216,7 +216,7 @@ def show_dash(dfs_dict, mapbox_api_key):
     loaded_files_markdown = ["### Loaded files:"] + [" * {}".format(_) for _ in list(dfs_dict.keys())]
 
 
-    app.layout = html.Div(children=[
+    app.layout = html.Div(id="outer_div", children=[
         dcc.Markdown('\n'.join(loaded_files_markdown)),
         dcc.Checklist(
             id = "yaxes_selection",
@@ -274,7 +274,7 @@ def show_dash(dfs_dict, mapbox_api_key):
 
             if (hoverData) {
                 console.log(hoverData)
-                Plotly.Fx.hover("mapbox_graph", {curveNumber:0, pointNumber:100})
+                Plotly.Fx.hover("mapbox_js", [{curveNumber:1, pointNumber:600}], "mapbox")
             }
             console.log("AAAA")
             return window.dash_clientside.no_update
