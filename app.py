@@ -109,7 +109,7 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
     log.info("Generating dataframes for {} files".format(len(fnames)))
 
     yaxes = fields_list(fnames)
-    valid_xaxes = ["distance", "timestamp", "rel_time"]
+    valid_xaxes = ["distance_meters", "distance_kilometers", "distance_miles",  "rel_time"]
 
     data = dict()
     for fname in fnames:
@@ -162,6 +162,9 @@ def gen_dataframes(fnames, force=False, sig_figs=2):
         d = pd.DataFrame(d)
         d = convert_lat_long(d)
         d = gen_lat_long_customdata(fname, d)
+        d["distance_meters"] = d["distance"]
+        d["distance_kilometers"] = d["distance"] / 1000
+        d["distance_miles"] = round(d["distance"] * 0.000621371192237333969617434184363, sig_figs)
         d["timestamp"] = pd.to_datetime(d["timestamp"], unit='s')
         d = d.add_prefix("{}.".format(fname))
         for valid_xaxis in valid_xaxes:
@@ -211,7 +214,7 @@ def show_dash(dfs_dict, mapbox_api_key):
 
             col_to_fname[c] = fname
 
-    xaxes = ["distance", "rel_time"]
+    xaxes = ["distance_meters", "distance_kilometers", "distance_miles", "rel_time"]
 
     loaded_files_markdown = ["### Loaded files:"] + [" * {}".format(_) for _ in list(dfs_dict.keys())]
 
@@ -284,9 +287,6 @@ def show_dash(dfs_dict, mapbox_api_key):
         [Input("metrics_graph", "hoverData")],
     )
 
-    distance_dfs = merge_dataframes("distance", list(dfs_dict.values()))
-    time_dfs = merge_dataframes("rel_time", list(dfs_dict.values()))
-    
     # TODO : change most of these to clientside instead of serverside
     @app.callback(
         Output("metrics_graph", "figure"), 
@@ -296,6 +296,7 @@ def show_dash(dfs_dict, mapbox_api_key):
         # find a way to shift dataset across x or y axis
         #[Input("shift-x", "value")]
     )
+
     def update_graph(xaxis_selection, yaxes_selection):
         log.info("Updating graph")
         if isinstance(xaxis_selection, list):
@@ -308,7 +309,7 @@ def show_dash(dfs_dict, mapbox_api_key):
         mask = [xaxis_selection]
         log.debug("Update graph xaxis: " + str(xaxis_selection))
         log.debug("Update graph yaxis: " + str(yaxes_selection))
-        df = time_dfs if xaxis_selection == "rel_time" else distance_dfs
+        df = merge_dataframes(xaxis_selection, list(dfs_dict.values()))
         fig = go.Figure()
         layout = {"hovermode": "x"}
         for i,yaxis_selection in enumerate(yaxes_selection):
@@ -388,8 +389,7 @@ def show_dash(dfs_dict, mapbox_api_key):
         fig.update_layout(layout)
 
         return fig
-
-
+    
     app.run_server(debug=True)
 
 def load_config(config_fname):
